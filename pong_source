@@ -1,0 +1,162 @@
+V0, V1, V2 : general purpose registers
+
+V3 : score increment (10 for left, 1 for right)
+
+V4, V5 : locations to draw scores to
+
+V6, V7 : ball [x, y]
+V8 : x speed of ball (2 or 254)
+V9 : y speed of ball (0, 1 or 255)
+
+Va, Vb : upper pixel of left stick [x, y]
+Vc, Vd : upper pixel of right stick [x, y]
+
+Ve : score
+
+
+*** INIT ***
+[200] (6a02 LD Vx, byte)    Va = 2  (x coord of left stick)
+[202] (6b0c LD Vx, byte)    Vb = 12 (y coord of left stick)
+[204] (6c3f LD Vx, byte)    Vc = 63 (x coord of right stick)
+j206] (6d0c LD Vx, byte)    Vd = 12 (y coord of right stick)
+[208] (a2ea LD I, addr)     I = 0x2ea (location of the stick sprite)
+[20a] (dab6 DRW Vx, Vy, n)  draw left stick [Va, Vb] [2, 12]
+[20c] (dcd6 DRW Vx, Vy, n)  draw right stick [Vc, Vd] [63, 12]
+[20e] (6e00 LD Vx, byte)    Ve = 0 (score)
+[210] (22d4 CALL addr)      call subroutine 2d4 (draw scores 0-0)
+[212] (6603 LD Vx, byte)    V6 = 3 (init x coord of ball on the left)
+[214] (6802 LD Vx, byte)    V8 = 2 (x direction of the ball, either 2 or 254)
+
+*** START OF A ROUND ***
+[216] (6060 LD Vx, byte)    V0 = 96            -| jumped from [2b8] (after a goal)
+[218] (f015 LD DT, Vx)      dt = V0             |
+[21a] (f007 LD Vx, dt)      V0 = dt             | jumped from [21e]
+[21c] (3000 SE Vx, byte)    skip if V0 == 0     |
+[21e] (121a JP addr)        jump to 21a        _| wait for 96 units (~1.5s)
+
+[220] (c717 RND Vx, byte)   V7 = rnd & 0x17     | init y coord of ball, only keep rightmost 5 bits (0-31)
+[222] (7708 ADD Vx, byte)   V7 += 8             | never start near the top
+[224] (69ff LD Vx, byte)    V9 = 255 (y direction of ball; start by going up)
+[226] (a2f0 LD I, addr)     I = 0x2f0 (location of the ball sprite, 0x80 : just one pixel)
+[228] (d671 DRW Vx, Vy, n)  draw ball [V6, V7]                                 -|
+[22a] (a2ea LD I, addr)     I = 0x2ea (location of the stick sprite)            | draw at start ; also erase
+[22c] (dab6 DRW Vx, Vy, n)  draw left stick [Va, Vb]                            |
+[22e] (dcd6 DRW Vx, Vy, n)  draw right stick [Vc, Vd]                          _|
+
+*** CONTROL HANDLING && GENERAL UPDATES ***
+[230] (6001 LD Vx, byte)    V0 = 1                          // left stick
+[232] (e0a1 SKNP Vx)        skip if key 1 is not pressed
+[234] (7bfe ADD Vx, byte)   Vb += 254 (move up)
+[236] (6004 LD Vx, byte)    V0 = 4
+[238] (e0a1 SKNP Vx)        skip if key 4 is not pressed
+[23a] (7b02 ADD Vx, byte)   Vb += 2 (move down)
+[23c] (601f LD Vx, byte)    V0 = 31
+[23e] (8b02 AND Vx, Vy)     Vb &= V0
+[240] (dab6 DRW Vx, Vy, n)  draw left stick [Va, Vb]
+
+[242] (600c LD Vx, byte)    V0 = 12                         // right stick
+[244] (e0a1 SKNP Vx)        skip if key 12 is not pressed
+[246] (7dfe ADD Vx, byte)   Vd += 254 (move up)
+[248] (600d LD Vx, byte)    V0 = 13
+[24a] (e0a1 SKNP Vx)        skip if key 13 is not pressed
+[24c] (7d02 ADD Vx, byte)   Vd += 2 (move down)
+[24e] (601f LD Vx, byte)    V0 = 31
+[250] (8d02 AND Vx, Vy)     Vd &= V0
+[252] (dcd6 DRW Vx, Vy, n)  draw right stick [Vc, Vd]
+
+[254] (a2f0 LD I, addr)     I = 0x2f0 (ball sprite)
+[256] (d671 DRW Vx, Vy, n)  draw ball [V6, V7]
+
+[258] (8684 ADD Vx, Vy)     V6 += V8           -| update ball position [V6,V7]
+[25a] (8794 ADD Vx, Vy)     V7 += V9            |
+[25c] (603f LD Vx, byte)    V0 = 63             |
+[25e] (8602 AND Vx, Vy)     V6 &= V0            | keep only rightmost 6 bytes (0-63)
+[260] (611f LD Vx, byte)    V1 = 31             |
+[262] (8712 AND Vx, Vy)     V7 &= V1           _| keep only rightmost 5 bytes (0-31)
+
+[264] (4602 SNE Vx, byte)   skip if V6 != 2    -|
+[266] (1278 JP addr)        jump to 278         | handle ball completely left or right
+[268] (463f SNE Vx, byte)   skip if V6 != 63    | (V6 vertical position)
+[26a] (1282 JP addr)        jump to 282        _|
+
+[26c] (471f SNE Vx, byte)   skip if V7 != 31       -|           jumped from [2d2]
+[26e] (69ff LD Vx, byte)    V9 = 255                | handle ball top or bottom
+[270] (4700 SNE Vx, byte)   skip if V7 != 0         | (V9 is vertical direction, V7 position)
+[272] (6901 LD Vx, byte)    V9 = 1                 _|
+
+[274] (d671 DRW Vx, Vy, n)  draw ball [V6, V7]
+[276] (122a JP addr)        jump to 22a
+
+[278] (6802 LD Vx, byte)    V8 = 2                      -|      jumped from [266]
+[27a] (6301 LD Vx, byte)    V3 = 1                       | V3 get added to score (1 = right player scores, 10 = left)
+[27c] (8070 LD Vx, Vy)      V0 = V7                      | handle ball on the left
+[27e] (80b5 SUB Vx, Vy)     V0 -= Vb ; set not borrow    | ball height - left stick height
+[280] (128a JP addr)        jump to 28a                 _| jump to handle no borrow (ball above stick = goal)
+
+[282] (68fe LD Vx, byte)    V8 = 254                    -|      jumped from [26a]
+[284] (630a LD Vx, byte)    V3 = 10                      | handle ball on the right
+[286] (8070 LD Vx, Vy)      V0 = V7                      |
+[288] (80d5 SUB Vx, Vy)     V0 -= Vd ; set not borrow    | Ball height - right stick height
+[28a] (3f01 SE Vx, byte)    skip if Vf == 1              | skip if ball lower than stick      // jumped from [280]
+[28c] (12a2 JP addr)        jump to 2a2                 _|
+
+[28e] (6102 LD Vx, byte)    V1 = 2                      | here we know that ball is lower than L/R stick
+[290] (8015 SUB Vx, Vy)     V0 -= V1 ; set not borrow   |
+[292] (3f01 SE Vx, byte)    skip if Vf == 1             | skip if ball-stick difference bigger than 2
+[294] (12ba JP addr)        jump to 2ba                 | (jump if difference in [0, 2[ )
+[296] (8015 SUB Vx, Vy)     V0 -= V1 ; set not borrow
+[298] (3f01 SE Vx, byte)    skip if Vf == 1             | skip again if bigger than 2 (4 total)
+[29a] (12c8 JP addr)        jump to 2c8                 | (jump if difference in [2, 4[ )
+[29c] (8015 SUB Vx, Vy)     V0 -= V1 ; set not borrow
+[29e] (3f01 SE Vx, byte)    skip if Vf == 1             | skip again if bigger than 2 (6 total)
+[2a0] (12c2 JP addr)        jump to 2c2                 | (jump if difference in [4, 6[ )
+
+*** GOAAAAAAAAL ***
+[2a2] (6020 LD Vx, byte)    V0 = 32                                 // either ball 6+ below stick, or jumped from [28c]
+[2a4] (f018 LD ST, Vx)      st = V0
+[2a6] (22d4 CALL addr)      call subroutine 2d4 (draw scores)       // actually erases scores (pixels are XORed)
+[2a8] (8e34 ADD Vx, Vy)     Ve += V3 ; set carry (holds scores)     // update score var
+[2aa] (22d4 CALL addr)      call subroutine 2d4 (draw scores)       // now, update score on-screen
+[2ac] (663e LD Vx, byte)    V6 = 62                             -| reset ball on the right
+[2ae] (3301 SE Vx, byte)    skip if V3 == 1                      | but if left scored...
+[2b0] (6603 LD Vx, byte)    V6 = 3                              _| reset ball on the left
+[2b2] (68fe LD Vx, byte)    V8 = 254                       -| ball moves towards left
+[2b4] (3301 SE Vx, byte)    skip if V3 == 1                 | but if left scored...
+[2b6] (6802 LD Vx, byte)    V8 = 2                         _| ball moves to the right
+[2b8] (1216 JP addr)        jump to 216  (restart round)
+
+*** BOUNCE ; UPDATE BALL SPEED & POSITION ***
+[2ba] (79ff ADD Vx, byte)   V9 += 255               | jumped from [294] (ball bounce on upper side)
+[2bc] (49fe SNE Vx, byte)   skip if V9 != 254
+[2be] (69ff LD Vx, byte)    V9 = 255
+[2c0] (12c8 JP addr)        jump to 2c8
+[2c2] (7901 ADD Vx, byte)   V9 += 1                 | jumped from [2a0] (ball bounce on lower side)
+[2c4] (4902 SNE Vx, byte)   skip if V9 != 2
+[2c6] (6901 LD Vx, byte)    V9 = 1
+[2c8] (6004 LD Vx, byte)    V0 = 4                  | jumped from [29a] OR [2c0] (ball bounce on middle)
+[2ca] (f018 LD ST, Vx)      st = V0
+[2cc] (7601 ADD Vx, byte)   V6 += 1
+[2ce] (4640 SNE Vx, byte)   skip if V6 != 64
+[2d0] (76fe ADD Vx, byte)   V6 += 254
+[2d2] (126c JP addr)        jump to 26c
+
+*** SUBROUTINE : draw scores ***
+[2d4] (a2f2 LD I, addr)     I = 0x2f2
+[2d6] (fe33 LD B, Vx)       load bcd repr of Ve in I [2f2-2f6]
+[2d8] (f265 LD Vx, [I])     load locations [I] [2f2-2f6] into registers V0 to V2
+[2da] (f129 LD F, Vx)       load sprite corresponding to value of V1 inside I
+[2dc] (6414 LD Vx, byte)    V4 = 20
+[2de] (6500 LD Vx, byte)    V5 = 0
+[2e0] (d455 DRW Vx, Vy, n)  draw 5 lines at [V4, V5] [20, 0]
+[2e2] (7415 ADD Vx, byte)   V4 += 21 == 41
+[2e4] (f229 LD F, Vx)       load sprite corresponding to value of V2 inside I
+[2e6] (d455 DRW Vx, Vy, n)  draw 5 lines at [V4, V5] [41, 0]
+[2e8] (00ee RET)            return
+
+*** SPRITES ***
+[2ea] (8080 LD Vx, Vy)      (stick sprite 1/3)
+[2ec] (8080 LD Vx, Vy)      (stick sprite 2/3)
+[2ee] (8080 LD Vx, Vy)      (stick sprite 3/3)
+[2f0] (8000 LD Vx, Vy)      (ball sprite)
+[2f2] (0000 unimplemented)  (writable memory area for score)
+[2f4] (0000 unimplemented)  (writable memory area for score)
